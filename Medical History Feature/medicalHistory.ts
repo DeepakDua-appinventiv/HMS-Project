@@ -4,8 +4,6 @@ interface IDiagnosis {
   disease: string;
   Treated: boolean;
   date: Date;
-  treatedBy: ObjectId;
-  treatedDoctorName: string;
 }
 
 interface IMedicalHistory extends Document {
@@ -14,20 +12,20 @@ interface IMedicalHistory extends Document {
   Medications: string;
   MedicalCondition: string;
   diagnozedWith: IDiagnosis;
+  treatedBy: mongoose.Types.ObjectId;
+  treatedDoctorName: string;
 }
 
 const diagnosisSchema = new Schema<IDiagnosis>({
   disease: String,
   Treated: Boolean,
   date: Date,
-  treatedBy: mongoose.Types.ObjectId,
-  treatedDoctorName: String,
 });
 
 const medicalHistorySchema = new Schema<IMedicalHistory>({
   patientId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Appointment",
+    ref: "Patient",
     required: true,
   },
   appointmentId: {
@@ -44,6 +42,15 @@ const medicalHistorySchema = new Schema<IMedicalHistory>({
   diagnozedWith: {
     type: diagnosisSchema,
     default: {},
+  },
+  treatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Staff",
+    required: true,
+  },
+  treatedDoctorName: {
+    type: String,
+    required: true,
   },
 });
 
