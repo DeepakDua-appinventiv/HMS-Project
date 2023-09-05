@@ -16,10 +16,10 @@ enum AppointmentSlot {
   AFTERNOON_12_30_1 = "Afternoon (12:30 PM - 1:00 PM)",
   AFTERNOON_1_1_30 = "Afternoon (1:00 PM - 1:30 PM)",
   AFTERNOON_1_30_2 = "Afternoon (1:30 PM - 2:00 PM)",
-  EVENING_6_6_30 = "Afternoon (6:00 PM - 6:30 PM)",
-  EVENING_6_30_7 = "Afternoon (6:30 PM - 7:00 PM)",
-  EVENING_7_7_30 = "Afternoon (7:00 PM - 7:30 PM)",
-  EVENING_7_30_8 = "Afternoon (7:30 PM - 8:00 PM)",
+  EVENING_6_6_30 = "Evening (6:00 PM - 6:30 PM)",
+  EVENING_6_30_7 = "Evening (6:30 PM - 7:00 PM)",
+  EVENING_7_7_30 = "Evening (7:00 PM - 7:30 PM)",
+  EVENING_7_30_8 = "Evening (7:30 PM - 8:00 PM)",
 }
 
 interface IAppointment extends Document {
@@ -32,6 +32,7 @@ interface IAppointment extends Document {
   visitReason: string;
   Visited: boolean;
   selectedSlot: AppointmentSlot;
+  departmentId: Object;
 }
 
 const appointmentSchema = new Schema<IAppointment>({
@@ -75,7 +76,11 @@ const appointmentSchema = new Schema<IAppointment>({
     type: String,
     enum: Object.values(AppointmentSlot),
     required: true,
-  }
+  },
+  departmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Department"
+  },
 });
 
 const appointmentModel = mongoose.model<IAppointment>(
