@@ -2,14 +2,17 @@ import staffModel from '../models/staffModel';
 import { Session } from '../models/sessionModel';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { ObjectId } from 'mongoose';
+import mongoose, { ObjectId } from 'mongoose';
 import { SUCCESS_MESSAGES, ERROR_MESSAGES } from '../constants';
-import { createClient } from "redis";
+import { SetOptions, createClient } from "redis";
 import fs from "fs";
 import MedicalHistoryModel from '../models/medicalHistory';
 import nodemailer from 'nodemailer';
 import { promises as fsPromises } from "fs";
 import patientModel from '../models/patientModel';
+const accountSid = 'AC971c22decfabc9d8362241f712808e43';
+const authToken = '45eea03ea99364ab8cd9988372a0650f';
+const Tclient = require('twilio')(accountSid, authToken);
 
 const SECRET_KEY = process.env.SECRET_KEY;
 
@@ -65,6 +68,84 @@ export class StaffServicesClass{
     }
 }
   
+//Service to handle get my patient medical history
+  static async getMyPatient(patientId: string) {
+  try {
+    const medicalHistory = await MedicalHistoryModel.find({ patientId })
+      .populate('appointmentId')
+      .exec();
+
+    if (!medicalHistory || medicalHistory.length === 0) {
+      return [];
+    }
+
+    const medicalHistoryWithDoctor = await MedicalHistoryModel.aggregate([
+      {
+        $match: { patientId: new mongoose.Types.ObjectId(patientId) },
+      },
+      {
+        $lookup: {
+          from: 'staff',
+          localField: 'diagnozedWith.treatedBy',
+          foreignField: '_id',
+          as: 'diagnozedWith.treatedDoctorName',
+        },
+      },
+      {
+        $unwind: '$diagnozedWith.treatedDoctorName',
+      },
+    ]);
+
+    return medicalHistoryWithDoctor;
+  } catch (error) {
+    throw error;
+  }
+}
+
+//Service to handle get all my patient with medical history
+static async getAllPatientsWithMedicalHistory() {
+  try {
+    const patients = await patientModel.find();
+
+    if (!patients || patients.length === 0) {
+      return [];
+    }
+
+    const patientsWithMedicalHistory = [];
+
+    for (const patient of patients) {
+      const patientId = patient._id;
+
+      const medicalHistoryWithDoctor = await MedicalHistoryModel.aggregate([
+        {
+          $match: { patientId: new mongoose.Types.ObjectId(patientId) },
+        },
+        {
+          $lookup: {
+            from: 'staff', 
+            localField: 'diagnozedWith.treatedBy',
+            foreignField: '_id',
+            as: 'diagnozedWith.treatedDoctorName',
+          },
+        },
+        {
+          $unwind: '$diagnozedWith.treatedDoctorName',
+        },
+      ]);
+
+      patientsWithMedicalHistory.push({
+        patient,
+        medicalHistory: medicalHistoryWithDoctor,
+      });
+    }
+
+    return patientsWithMedicalHistory;
+  } catch (error) {
+    console.error(error);
+    throw new Error('Server error');
+  }
+}
+
 //Service to handle get all staff details by there role
 static async fetchAllStaffByRole(role: string, page: number, limit: number): Promise<any>{
     try {
@@ -159,10 +240,13 @@ static async uploadStaffProfile(req: any): Promise<any>{
 
 static async sendPasswordResetOTP(sId: ObjectId): Promise<any> {
     try {
-      const patient = await patientModel.findOne({ _id: sId });
-      if (!patient) {
+      const staff = await patientModel.findOne({ _id: sId });
+      if (!staff) {
         return { success: false };
       }
+      const client = createClient();
+      client.on("error", (err) => console.log("redis Client Error", err));
+      await client.connect();
       const template = fs.readFileSync('/home/admin446/Desktop/Hospital Mang Project/src/templates/OTP_Email.html', 'utf-8');
       const generateOTP = async (length) => {
         const charset = '0123456789';
@@ -176,6 +260,8 @@ static async sendPasswordResetOTP(sId: ObjectId): Promise<any> {
         return otp;
       };
       const otp = await generateOTP(6);
+      const options: SetOptions = { EX: 120 };
+      await client.set(`otp:${sId}`, otp);
 
       const transporter = nodemailer.createTransport({
         service: "gmail",
@@ -187,22 +273,79 @@ static async sendPasswordResetOTP(sId: ObjectId): Promise<any> {
 
       const mailOptions = {
         from: process.env.EMAIL,
-        to: patient.email, 
+        to: staff.email, 
         subject: "Password Reset OTP",
         html: template
-          .replace("{{ name }}", patient.name) 
+          .replace("{{ name }}", staff.name) 
           .replace("{{ otp }}", otp),
       };
 
       await  transporter.sendMail(mailOptions);
-      const client = createClient();
-      client.on("error", (err) => console.log("redis Client Error", err));
-      await client.connect();
-      await client.set(`status:${sId}`, `${otp}`);
       
       return { success: true };
     } catch (error) {
       throw error;
     }
   }
+
+  static async sendPasswordResetOTPSMS(sId: ObjectId): Promise<any> {
+    try {
+      const staff = await staffModel.findOne({ _id: sId });
+      if (!staff) {
+        return { success: false };
+      }
+      const client = createClient();
+      client.on("error", (err) => console.log("redis Client Error", err));
+      await client.connect();
+      const generateOTP = async (length) => {
+        const charset = '0123456789';
+        let otp = '';
+        for (let i = 0; i < length; i++) {
+          const randomIndex = Math.floor(Math.random() * charset.length);
+          otp += charset[randomIndex];
+        }
+        return otp;
+      };
+      const otp = await generateOTP(6);
+      const options: SetOptions = { EX: 120 };
+      await client.set(`otp:${sId}`, otp);
+
+      Tclient.messages
+      .create({
+        body: `Hi, ${staff.firstName}, Please use ${otp} as OTP for password reset on your HMS Account. OTP valid for 2 minutes`,
+        from: '+16592014852',
+        to: '+919650949873'
+    })
+    .then(message => console.log(message.sid))
+    .done();
+      
+      return { success: true };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  //Service to handle reset password functionality
+  static async resetPassword(sId, enteredOtp, newPassword){
+    try {
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const client = createClient();
+      client.on("error", (err) => console.log("redis Client Error", err));
+      await client.connect();
+      const storedOtp = await client.get(`otp: ${sId}`);
+      if(!storedOtp) {
+        return { success: false };
+      }
+      if(enteredOtp == storedOtp){
+        const staff = await staffModel.findOne({ _id:sId });
+        staff.password = hashedPassword;
+        await staff.save();
+        await client.del(`otp: ${sId}`);
+        return { success: true };
+      }
+    } catch (error) {
+        return { invalidOtp: true };
+    }
+  }
+
 }
