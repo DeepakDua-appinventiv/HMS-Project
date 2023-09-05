@@ -5,6 +5,7 @@ import { MedicalHistoryClass } from "../controller/medHistoryController";
 
 medRouter.post('/addhistory', staffAuth, MedicalHistoryClass.addHistory);
 medRouter.get('/gethistory', auth, MedicalHistoryClass.getHistory);
+medRouter.get('/getpatienthistory', staffAuth, MedicalHistoryClass.getHistoryForStaff);
 medRouter.put('/updatehistory/:id', staffAuth , MedicalHistoryClass.updateHistory);
 
 export default medRouter;
