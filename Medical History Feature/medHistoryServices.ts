@@ -1,17 +1,59 @@
 import MedicalHistoryModel from "../models/medicalHistory";
 import { ObjectId } from "mongoose";
 import medicationBillModel from "../models/medicationBill";
+import appointmentModel from "../models/appointmentModel";
+import staffModel from "../models/staffModel";
 
 export class MedHistoryServicesClass{
 //Service to handle add medical history of patient
- static async addMedicalHistory(medHistoryData: any): Promise<any> {
-    try {
-        const newMedHistory = new MedicalHistoryModel(medHistoryData);
-        await newMedHistory.save();
+//  static async addMedicalHistory(medHistoryData: any): Promise<any> {
+//     try {
+//         const newMedHistory = new MedicalHistoryModel(medHistoryData);
+//         await newMedHistory.save();
 
-        return { status: 201, response: { message: 'Medical History Added Successfully', data: newMedHistory}};
+//         return { status: 201, response: { message: 'Medical History Added Successfully', data: newMedHistory}};
+//     } catch (error) {
+//         throw error;
+//     }
+// }
+
+static async addMedicalHistory(medHistoryData: any, staffId: string) {
+    try {
+        const appointment = await appointmentModel.findById(medHistoryData.appointmentId);
+
+        if (!appointment) {
+            return { success: false, message: "Appointment not found" };
+        }
+
+        if (appointment.AppointmentStatus === 'Scheduled' && !appointment.Visited) {
+            // Update appointment status to "Completed" if visited is true
+            await appointmentModel.findByIdAndUpdate(
+                medHistoryData.appointmentId,
+                {
+                    AppointmentStatus: 'Completed',
+                    Visited: true
+                }
+            );
+
+            const staff = await staffModel.findById(staffId);
+            if (!staff) {
+                return { success: false, message: "Staff not found" };
+            }
+
+            medHistoryData.treatedBy = staffId;
+            medHistoryData.treatedDoctorName = `${staff.firstName} ${staff.lastName}`;
+
+            // Your logic to add medical history goes here
+            const newMedHistory = new MedicalHistoryModel(medHistoryData);
+            await newMedHistory.save();
+
+            return { success: true, status: 200, response: { message: "Medical history added successfully" } };
+        } else {
+            return { success: false, message: 'Cannot add medical history for appointments with status other than Scheduled or if visited is true' };
+        }
     } catch (error) {
-        throw error;
+        console.error(error);
+        return { success: false, message: "An error occurred while adding medical history" };
     }
 }
 
